@@ -1,10 +1,23 @@
 from flask import Flask, request, jsonify, render_template
+import json
+from confluent_kafka import Producer
 
 app = Flask(__name__)
+
+kafka_conf = {'bootstrap.servers': 'localhost:9092'}
+producer = Producer(kafka_conf)
+KAFKA_TOPIC = 'store_purchases'
 
 # Our in-memory database
 books_db = {}
 next_book_id = 1
+
+def delivery_report(err, msg):
+    """Callback to let us know if Kafka received the message."""
+    if err is not None:
+        print(f"Kafka delivery failed: {err}")
+    else:
+        print(f"Kafka event delivered to {msg.topic()} [{msg.partition()}]")
 
 @app.route('/', methods=['GET'])
 def home():
@@ -22,18 +35,33 @@ def create_book():
     print(data)
     
     # Create a new book object
-    new_book = {
-        'id': next_book_id,
-        'title': data.get('title'),
-        'author': data.get('author')
-    }
+    # new_book = {
+    #     'id': next_book_id,
+    #     'title': data.get('title'),
+    #     'author': data.get('author')
+    # }
+
+    purchase_event ={
+    "order_id":777112,
+    "customer_email":"runa@gmail.com",
+    "item": "cake",
+    "quantity":3,
+    "price": 199.99
+}
     
-    # Save to "database"
-    books_db[next_book_id] = new_book
-    next_book_id += 1
+    # # Save to "database"
+    # books_db[next_book_id] = new_book
+    # next_book_id += 1
+
+    producer.produce(
+        KAFKA_TOPIC, 
+        value=json.dumps(purchase_event).encode('utf-8'), 
+        callback=delivery_report
+    )
     
+    producer.poll(0)
     # Return the created book and a 201 Created status code
-    return jsonify(new_book), 201
+    return jsonify(purchase_event), 201
 
 @app.route('/books', methods=['GET'])
 def get_all_books():
